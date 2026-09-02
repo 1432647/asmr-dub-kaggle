@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "asmrdub"
+version = "0.1.0"
+description = "ASMR JP->ZH dubbing pipeline for Kaggle dual-T4 (VideoLingo + IndexTTS-2.5)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["asmrdub"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
