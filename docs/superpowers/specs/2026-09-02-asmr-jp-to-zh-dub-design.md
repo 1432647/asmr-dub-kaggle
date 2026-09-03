@@ -28,7 +28,7 @@ Kaggle notebook 是一台带 root 的 Linux VM，`git clone` + `pip install` + �
 ```
 Kaggle cell (粘贴 kaggle_bootstrap.py)
   └─ git clone <overlay 仓库>          # 我们的补丁与新代码
-      └─ setup/bootstrap_main.py
+      └─ bootstrap/bootstrap_main.py
           ├─ git clone VideoLingo @钉死commit
           ├─ git clone index-tts   @钉死commit
           ├─ apply_overlay：拷 overlay/ + 打补丁 + 写 config.yaml
@@ -222,7 +222,7 @@ asmr-dub-kaggle/
     core/_11_merge_audio_asmr.py
     asmr_ui.py                             （Streamlit 主界面）
   worker/server.py                 # P2
-  setup/{bootstrap_main,prepare_env,prepare_models,apply_overlay}.py
+  bootstrap/{bootstrap_main,prepare_env,prepare_models,apply_overlay}.py
   runtime/{ollama_svc,tunnel,run_all}.py
   tests/                           # pytest，纯 CPU，本地可跑
 ```

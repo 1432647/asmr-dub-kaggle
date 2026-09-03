@@ -22,7 +22,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 from asmrdub import pins  # noqa: E402
-from setup import prepare_env, prepare_models  # noqa: E402
+from bootstrap import prepare_env, prepare_models  # noqa: E402
 
 BOLD = "\033[1m"
 CYAN = "\033[36m"

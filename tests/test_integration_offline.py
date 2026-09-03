@@ -9,7 +9,7 @@ mismatch, a mono/stereo confusion, a pan that lands on the wrong ear.
 Requires a patched VideoLingo checkout; set ASMRDUB_VL_ROOT to it. Create one
 with:
 
-    python setup/apply_overlay.py --repo-root <checkout> --overlay-root overlay
+    python bootstrap/apply_overlay.py --repo-root <checkout> --overlay-root overlay
 
 Skipped when that variable is unset, so `pytest` stays green on a bare clone.
 """

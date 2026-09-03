@@ -114,6 +114,23 @@ IndexTTS 要 librosa 0.10.2 / opencv 4.9 / transformers 4.52.1，混装必炸）
 
 P2/P3 只监听回环，**没有任何鉴权**，绝不能暴露到隧道。
 
+## 目录结构
+
+```
+kaggle_bootstrap.py   唯一需要粘贴进 notebook 的文件
+asmrdub/              纯逻辑核心（不 import torch/numpy/streamlit，笔记本上可测）
+bootstrap/            装配期：clone 上游、打补丁、解析权重、建 venv
+runtime/              运行期：起服务、ollama、cloudflared 隧道
+worker/               GPU worker（在 index-tts 的 venv 里跑）
+overlay/              覆盖到 VideoLingo 之上的文件
+tests/                312 个离线测试
+```
+
+> `bootstrap/` 不叫 `setup/`：Kaggle 镜像自带一个已安装的 `setup` 发行版
+> （`dist-packages/setup/__init__.py`），同名目录会被它遮蔽。同理每个被 import
+> 的目录都有 `__init__.py`——命名空间包永远输给已安装的常规包，`sys.path` 顺序
+> 救不了。`tests/test_package_layout.py` 用诱饵包复现了这个失败并守住它。
+
 ## 相对上游 VideoLingo 的改动
 
 上游钉死 commit（`814f84ee`），改动方式优先「新增 overlay 文件」而非「改上游」——
@@ -154,7 +171,7 @@ for spec in "Huanshere/VideoLingo 814f84eeb98db987510e3558feeb595de2ac328a /tmp/
 done
 
 # 打补丁 + 覆盖 overlay
-python setup/apply_overlay.py --repo-root /tmp/vl --overlay-root overlay
+python bootstrap/apply_overlay.py --repo-root /tmp/vl --overlay-root overlay
 
 # 跑全部测试（含集成）
 uv pip install --python .venv pandas openpyxl numpy soundfile rich openai \
@@ -164,9 +181,10 @@ uv pip install --python .venv pandas openpyxl numpy soundfile rich openai \
 ASMRDUB_VL_ROOT=/tmp/vl ASMRDUB_IT_ROOT=/tmp/it .venv/bin/python -m pytest
 ```
 
-四类测试，全部离线、无 GPU、不联网：
+五类测试，全部离线、无 GPU、不联网：
 
 - **纯逻辑单测**：扩窗、声像互逆、重叠相加、SRT 时间、复核表往返、盘位选择
+- **包布局回归**：用诱饵包复现 Kaggle 上 `setup` 被遮蔽的失败，守住命名与 `__init__.py`
 - **合约测试**（AST 解析上游源码）：我们传的每个关键字参数在钉死的上游里真实存在
 - **假服务集成**：假 GPU worker（正弦波代替 TTS）+ 假 OpenAI 端点（按 prompt 判断阶段返回对应 schema），跑的是真的 VideoLingo 阶段代码
 - **CPU torch**：用替身分离模型跑真的 `do_separate`，断言直通模型能精确重建输入

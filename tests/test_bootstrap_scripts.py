@@ -1,4 +1,4 @@
-"""Smoke tests over the setup/runtime scripts.
+"""Smoke tests over the bootstrap/runtime scripts.
 
 These do not touch the network, a GPU, or a real upstream checkout. They cover
 the parts that would otherwise only fail 20 minutes into a Kaggle session:
@@ -18,7 +18,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from setup import prepare_models  # noqa: E402
+from bootstrap import prepare_models  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -28,10 +28,10 @@ from setup import prepare_models  # noqa: E402
 
 SCRIPTS = (
     "kaggle_bootstrap.py",
-    "setup/bootstrap_main.py",
-    "setup/apply_overlay.py",
-    "setup/prepare_env.py",
-    "setup/prepare_models.py",
+    "bootstrap/bootstrap_main.py",
+    "bootstrap/apply_overlay.py",
+    "bootstrap/prepare_env.py",
+    "bootstrap/prepare_models.py",
     "runtime/run_all.py",
     "runtime/ollama_svc.py",
     "runtime/tunnel.py",
@@ -244,7 +244,7 @@ def test_state_file_keys_match_run_all_expectations():
     with open(os.path.join(ROOT, "runtime", "run_all.py"), "r", encoding="utf-8") as fh:
         run_all_source = fh.read()
     with open(
-        os.path.join(ROOT, "setup", "bootstrap_main.py"), "r", encoding="utf-8"
+        os.path.join(ROOT, "bootstrap", "bootstrap_main.py"), "r", encoding="utf-8"
     ) as fh:
         bootstrap_source = fh.read()
     for key in (
@@ -258,7 +258,7 @@ def test_state_file_keys_match_run_all_expectations():
 
 def test_bootstrap_declares_the_advertised_step_count():
     with open(
-        os.path.join(ROOT, "setup", "bootstrap_main.py"), "r", encoding="utf-8"
+        os.path.join(ROOT, "bootstrap", "bootstrap_main.py"), "r", encoding="utf-8"
     ) as fh:
         source = fh.read()
     declared = int(source.split("total = ", 1)[1].split("\n", 1)[0])

@@ -24,7 +24,7 @@ from asmrdub import pins  # noqa: E402
 
 
 def _load():
-    path = os.path.join(ROOT, "setup", "prepare_models.py")
+    path = os.path.join(ROOT, "bootstrap", "prepare_models.py")
     spec = importlib.util.spec_from_file_location("asmrdub_prepare_models", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

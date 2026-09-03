@@ -46,7 +46,7 @@ def fetch_project():
     """把 overlay 项目弄到本地。
 
     三种来源，按可用性依次尝试：
-      1. 已挂载为 Kaggle Dataset（离线可用，认 setup/bootstrap_main.py 存在）
+      1. 已挂载为 Kaggle Dataset（离线可用，认 bootstrap/bootstrap_main.py 存在）
       2. git clone（默认）
       3. 已经克隆过 → git fetch 更新
     """
@@ -71,7 +71,7 @@ def _find_mounted_project(root="/kaggle/input", max_depth=4):
         if current.count("/") - base_depth >= max_depth:
             subdirs[:] = []
             continue
-        if os.path.isfile(os.path.join(current, "setup", "bootstrap_main.py")):
+        if os.path.isfile(os.path.join(current, "bootstrap", "bootstrap_main.py")):
             return current
     return None
 
@@ -88,7 +88,7 @@ def main():
         shutil.copytree(project, PROJECT)
         project = PROJECT
 
-    bootstrap = [sys.executable, os.path.join(project, "setup", "bootstrap_main.py")]
+    bootstrap = [sys.executable, os.path.join(project, "bootstrap", "bootstrap_main.py")]
     if MODEL:
         bootstrap += ["--model", MODEL]
     if PASSWORD:
