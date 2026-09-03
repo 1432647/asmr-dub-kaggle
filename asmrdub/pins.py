@@ -75,6 +75,9 @@ HDEMUCS_SOURCES = ("drums", "bass", "other", "vocals")
 OLLAMA_MODEL = "hf.co/zaakirio/gemma-4-12b-it-uncensored-GGUF:Q4_K_M"
 OLLAMA_MODEL_FALLBACK = "gemma4:12b"
 OLLAMA_TARBALL = "https://ollama.com/download/ollama-linux-amd64.tar.zst"
+# Verified against a Range request; a truncated download otherwise looks
+# "already fetched" on the next run and fails at extraction instead.
+OLLAMA_TARBALL_SIZE = 1422262024
 
 CLOUDFLARED_URL = (
     "https://github.com/cloudflare/cloudflared/releases/latest/download/"

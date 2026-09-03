@@ -17,12 +17,12 @@ import os
 import shutil
 import subprocess
 import sys
-import tarfile
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from asmrdub import pins
+from bootstrap import zst
 
 BOLD = "\033[1m"
 RESET = "\033[0m"
@@ -185,12 +185,21 @@ def verify_gpu_env(python: str) -> dict:
 # --------------------------------------------------------------------------
 
 
-def install_ollama(scratch: str) -> str:
-    """Extract the ollama tarball; return the path to the binary.
+def install_ollama(
+    scratch: str, helper_python: str | None = None, uv: str | None = None
+) -> str:
+    """Download and extract ollama; return the path to the binary.
 
-    Upstream now ships `.tar.zst`; the older `.tgz` URL is a 404. zstd is
-    present on Kaggle images, and Python's tarfile cannot read zstd, so the
-    extraction goes through the shell.
+    Only `.tar.zst` is published now (the `.tgz` URL 404s), and Kaggle's image
+    has no zstd at all -- not the binary, and not the Python module. Upstream's
+    own install.sh simply errors out here telling you to apt-get it. `zst.extract`
+    tries a binary, an in-process decompressor, a helper interpreter and finally
+    apt, so a missing zstd stops being fatal.
+
+    Downloads to a `.part` file and renames on success: a truncated 1.4GB archive
+    left behind by a dropped connection would be skipped as "already downloaded"
+    on the next run and then fail to extract, which is a confusing way to lose a
+    session.
     """
     root = os.path.join(scratch, "ollama")
     binary = os.path.join(root, "bin", "ollama")
@@ -198,20 +207,29 @@ def install_ollama(scratch: str) -> str:
         say("ollama already installed")
         return binary
     os.makedirs(root, exist_ok=True)
+
     archive = os.path.join(scratch, "ollama-linux-amd64.tar.zst")
     if not os.path.isfile(archive):
         say("downloading ollama (~1.4GB)")
+        partial = archive + ".part"
         with urllib.request.urlopen(pins.OLLAMA_TARBALL, timeout=300) as response, open(
-            archive, "wb"
+            partial, "wb"
         ) as fh:
             shutil.copyfileobj(response, fh, length=1 << 20)
-    say("extracting ollama")
-    if shutil.which("zstd"):
-        run(["bash", "-lc", f"zstd -d -c '{archive}' | tar -xf - -C '{root}'"],
-            what="ollama extract")
-    else:
-        run(["tar", "--use-compress-program=unzstd", "-xf", archive, "-C", root],
-            what="ollama extract")
+        expected = pins.OLLAMA_TARBALL_SIZE
+        actual = os.path.getsize(partial)
+        if expected and actual != expected:
+            os.unlink(partial)
+            raise RuntimeError(
+                f"ollama archive is {actual} bytes, expected {expected} "
+                f"(download truncated; re-run to retry)"
+            )
+        os.replace(partial, archive)
+
+    say(f"extracting ollama (zstd support: {zst.describe_support(helper_python)})")
+    method = zst.extract(archive, root, helper_python=helper_python, uv=uv, log=say)
+    say(f"extracted via {method}")
+
     if not os.path.isfile(binary):
         found = _find_named(root, "ollama")
         if not found:
@@ -222,32 +240,40 @@ def install_ollama(scratch: str) -> str:
 
 
 def _find_named(root: str, name: str) -> str | None:
+    """First file called `name` under `root`, preferring an executable one."""
+    fallback = None
     for current, _, files in os.walk(root):
         if name in files:
             candidate = os.path.join(current, name)
-            if os.access(candidate, os.X_OK) or True:
+            if os.access(candidate, os.X_OK):
                 return candidate
-    return None
+            fallback = fallback or candidate
+    return fallback
 
 
 def install_cloudflared(scratch: str) -> str:
+    """Fetch the cloudflared binary. Written via `.part` for the same reason.
+
+    A half-written binary is worse than none: it exists, so the next run skips
+    the download, and then the tunnel dies with "Exec format error".
+    """
     target = os.path.join(scratch, "bin", "cloudflared")
-    if os.path.isfile(target):
+    if os.path.isfile(target) and os.path.getsize(target) > 1_000_000:
         return target
     os.makedirs(os.path.dirname(target), exist_ok=True)
     say("downloading cloudflared")
+    partial = target + ".part"
     with urllib.request.urlopen(pins.CLOUDFLARED_URL, timeout=180) as response, open(
-        target, "wb"
+        partial, "wb"
     ) as fh:
         shutil.copyfileobj(response, fh, length=1 << 20)
+    if os.path.getsize(partial) < 1_000_000:
+        size = os.path.getsize(partial)
+        os.unlink(partial)
+        raise RuntimeError(f"cloudflared download is only {size} bytes; retry")
+    os.replace(partial, target)
     os.chmod(target, 0o755)
     return target
-
-
-def extract_tar(archive: str, dest: str) -> None:
-    os.makedirs(dest, exist_ok=True)
-    with tarfile.open(archive) as tar:
-        tar.extractall(dest)
 
 
 if __name__ == "__main__":
@@ -264,7 +290,7 @@ if __name__ == "__main__":
     app_python = build_app_env(uv, args.app_venv, args.repo_root)
     gpu_python = build_gpu_env(uv, args.index_tts_root)
     verify_gpu_env(gpu_python)
-    install_ollama(args.scratch)
+    install_ollama(args.scratch, helper_python=app_python, uv=uv)
     install_cloudflared(args.scratch)
     say(f"app python: {app_python}")
     say(f"gpu python: {gpu_python}")

@@ -123,7 +123,7 @@ bootstrap/            装配期：clone 上游、打补丁、解析权重、建 
 runtime/              运行期：起服务、ollama、cloudflared 隧道
 worker/               GPU worker（在 index-tts 的 venv 里跑）
 overlay/              覆盖到 VideoLingo 之上的文件
-tests/                312 个离线测试
+tests/                337 个离线测试
 ```
 
 > `bootstrap/` 不叫 `setup/`：Kaggle 镜像自带一个已安装的 `setup` 发行版
@@ -147,6 +147,27 @@ tests/                312 个离线测试
 | g2p_en 改懒加载 | 构造估算器时会下载 nltk 数据；纯中日流程根本用不到英文音节 |
 | TTS 串行 | worker 单锁，并发只增加排队和超时风险 |
 | `real_dur` 初始化成 float | 上游写 `= 0` 得到 int64 列，再塞 2.78 进去；pandas 3 直接报错，配音第一句就崩（另把 `pandas>=2.2.3` 收紧成 `<3`） |
+
+## 装配期的两个环境坑
+
+Kaggle 镜像的两个特性会让引导脚本直接死掉，都已绕开：
+
+**`setup` 这个名字被占了。** 镜像里装了一个叫 `setup` 的发行版（`dist-packages/setup/__init__.py`），
+所以本项目的装配目录叫 `bootstrap/`。同理每个被 import 的目录都有真的 `__init__.py`——
+命名空间包永远输给已安装的常规包，`sys.path.insert(0, ...)` 救不了。
+
+**镜像里没有 zstd。** ollama 现在只发布 `.tar.zst`（`.tgz` 是 404），而镜像既没有 `zstd`
+二进制也没有 Python 的 `zstandard`；ollama 官方 install.sh 到这一步就是直接报错让你
+`apt-get install zstd`。[`bootstrap/zst.py`](bootstrap/zst.py) 依次尝试四条路，全程流式
+（1.4GB 压缩包不落中间文件）：
+
+1. `zstd`/`unzstd`/`pzstd` 二进制，管道进 tar
+2. 当前解释器里的 `zstandard`（或 3.14 的标准库 `compression.zstd`）
+3. 往已建好的 app venv 里 `uv pip install zstandard`，在那边解压 ← **Kaggle 上走的是这条**
+4. `apt-get install -y zstd`，再回到第 1 条
+
+apt 放最后：它要 root、要包索引，是四条里最慢最不可预测的。四条全败时报错会列出每一条
+的失败原因并给出该装什么，而不是只说一句 "tar failed"。
 
 ## 本地开发
 
@@ -184,7 +205,7 @@ ASMRDUB_VL_ROOT=/tmp/vl ASMRDUB_IT_ROOT=/tmp/it .venv/bin/python -m pytest
 五类测试，全部离线、无 GPU、不联网：
 
 - **纯逻辑单测**：扩窗、声像互逆、重叠相加、SRT 时间、复核表往返、盘位选择
-- **包布局回归**：用诱饵包复现 Kaggle 上 `setup` 被遮蔽的失败，守住命名与 `__init__.py`
+- **环境回归**：诱饵包复现 `setup` 遮蔽；手写 zstd 编码器造出真实 `.tar.zst`，逐条压出四级回退
 - **合约测试**（AST 解析上游源码）：我们传的每个关键字参数在钉死的上游里真实存在
 - **假服务集成**：假 GPU worker（正弦波代替 TTS）+ 假 OpenAI 端点（按 prompt 判断阶段返回对应 schema），跑的是真的 VideoLingo 阶段代码
 - **CPU torch**：用替身分离模型跑真的 `do_separate`，断言直通模型能精确重建输入

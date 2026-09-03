@@ -22,7 +22,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 from asmrdub import pins  # noqa: E402
-from bootstrap import prepare_env, prepare_models  # noqa: E402
+from bootstrap import prepare_env, prepare_models, zst  # noqa: E402
 
 BOLD = "\033[1m"
 CYAN = "\033[36m"
@@ -91,6 +91,9 @@ def check_environment() -> None:
         )
     if not shutil.which("ffmpeg"):
         raise SystemExit("ffmpeg not found on PATH; it is required for all audio I/O")
+    # Not fatal: `zst.extract` has three more ways to unpack the ollama archive.
+    # Reported here so the situation is visible before step 7 rather than at it.
+    say(f"zstd support: {zst.describe_support()}")
     try:
         import urllib.request
 
@@ -171,7 +174,12 @@ def main() -> int:
     gpu_info = prepare_env.verify_gpu_env(gpu_python)
 
     step(7, total, "下载独立二进制（ollama / cloudflared）")
-    ollama_binary = prepare_env.install_ollama(scratch)
+    # The app venv is the helper interpreter for zstd extraction: Kaggle's image
+    # ships no zstd at all, and this venv is one `uv pip install` away from
+    # having the Python module.
+    ollama_binary = prepare_env.install_ollama(
+        scratch, helper_python=app_python, uv=uv
+    )
     cloudflared_binary = prepare_env.install_cloudflared(scratch)
 
     state = {
