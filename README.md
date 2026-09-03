@@ -123,7 +123,7 @@ bootstrap/            装配期：clone 上游、打补丁、解析权重、建 
 runtime/              运行期：起服务、ollama、cloudflared 隧道
 worker/               GPU worker（在 index-tts 的 venv 里跑）
 overlay/              覆盖到 VideoLingo 之上的文件
-tests/                337 个离线测试
+tests/                359 个离线测试
 ```
 
 > `bootstrap/` 不叫 `setup/`：Kaggle 镜像自带一个已安装的 `setup` 发行版
@@ -147,10 +147,11 @@ tests/                337 个离线测试
 | g2p_en 改懒加载 | 构造估算器时会下载 nltk 数据；纯中日流程根本用不到英文音节 |
 | TTS 串行 | worker 单锁，并发只增加排队和超时风险 |
 | `real_dur` 初始化成 float | 上游写 `= 0` 得到 int64 列，再塞 2.78 进去；pandas 3 直接报错，配音第一句就崩（另把 `pandas>=2.2.3` 收紧成 `<3`） |
+| `ask_gpt` 关掉 thinking + 读 `reasoning` 兜底 | Gemma 4 是 thinking 模型，经 ollama 的 `/v1` 时答案落在 `reasoning`、`content` 是空的（[ollama#15288](https://github.com/ollama/ollama/issues/15288)）；上游只读 `content`，每次翻译都会拿到空串 |
 
-## 装配期的两个环境坑
+## 装配期的三个环境坑
 
-Kaggle 镜像的两个特性会让引导脚本直接死掉，都已绕开：
+Kaggle 镜像与 ollama 的三个特性会让引导脚本直接死掉，都已绕开：
 
 **`setup` 这个名字被占了。** 镜像里装了一个叫 `setup` 的发行版（`dist-packages/setup/__init__.py`），
 所以本项目的装配目录叫 `bootstrap/`。同理每个被 import 的目录都有真的 `__init__.py`——
@@ -168,6 +169,14 @@ Kaggle 镜像的两个特性会让引导脚本直接死掉，都已绕开：
 
 apt 放最后：它要 root、要包索引，是四条里最慢最不可预测的。四条全败时报错会列出每一条
 的失败原因并给出该装什么，而不是只说一句 "tar failed"。
+
+**Gemma 4 是 thinking 模型，而 ollama 的 `/v1` 会把答案藏起来。** 经
+`/v1/chat/completions` 请求时，`content` 返回空字符串，整段答案落在非标准的 `reasoning`
+字段里（[ollama#15288](https://github.com/ollama/ollama/issues/15288)）。上游 `ask_gpt`
+只读 `content`，于是每次翻译都拿到空串——`json_repair` 把它变成空 dict，校验失败，重试 5 次，
+整个阶段崩掉。两道防线：请求里带 `reasoning_effort="none"`（该端点确实支持，
+[ollama#15635](https://github.com/ollama/ollama/issues/15635)），以及 `content` 仍为空时
+回落读 `reasoning` / `reasoning_content` / `thinking`。
 
 ## 本地开发
 

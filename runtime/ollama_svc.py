@@ -170,12 +170,34 @@ def ensure_model(
     )
 
 
+def answer_text(message: dict) -> tuple[str, str]:
+    """Pull the answer out of a chat message, wherever the server put it.
+
+    Returns (text, field). Thinking models on ollama's OpenAI-compatible
+    endpoint leave `content` empty and put everything in a non-standard
+    `reasoning` field (ollama#15288), so a caller that reads only `content`
+    sees a successful response with no text in it -- which is exactly how the
+    first Kaggle run wasted a 7.4GB pull.
+    """
+    for field in ("content", "reasoning", "reasoning_content", "thinking"):
+        value = message.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip(), field
+    return "", ""
+
+
 def verify(model: str, port: int = pins.OLLAMA_PORT, timeout: int = 900) -> bool:
     """One real completion through the OpenAI-compatible route.
 
     This is the exact path ask_gpt uses, so a success here means translation
     will work; a 500 from an unsupported GGUF architecture shows up now rather
     than 20 minutes in.
+
+    `reasoning_effort="none"` is sent because Gemma 4 is a thinking model and
+    that endpoint honours the field (ollama#15635). If the answer still arrives
+    in `reasoning`, that counts as working -- the ask_gpt patch reads the same
+    fallback fields -- but it is reported, because it means every translation
+    call pays for a thinking pass.
     """
     payload = json.dumps(
         {
@@ -183,6 +205,7 @@ def verify(model: str, port: int = pins.OLLAMA_PORT, timeout: int = 900) -> bool
             "messages": [{"role": "user", "content": "把这句日语翻译成中文：こんにちは。只输出译文。"}],
             "temperature": 0.0,
             "max_tokens": 64,
+            "reasoning_effort": "none",
         }
     ).encode("utf-8")
     request = urllib.request.Request(
@@ -193,15 +216,30 @@ def verify(model: str, port: int = pins.OLLAMA_PORT, timeout: int = 900) -> bool
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = json.load(response)
-        text = body["choices"][0]["message"]["content"].strip()
-        say(f"verify ok: {text[:60]!r}")
-        return bool(text)
+        message = body["choices"][0]["message"]
+        text, field = answer_text(message)
     except urllib.error.HTTPError as exc:
         say(f"verify failed: HTTP {exc.code} {exc.read()[:300]!r}")
         return False
     except Exception as exc:  # noqa: BLE001
         say(f"verify failed: {exc}")
         return False
+
+    if not text:
+        # A 200 with no usable text anywhere. Say which keys came back, because
+        # "verify ok: ''" told us nothing the first time this happened.
+        say(
+            "verify failed: 200 OK but no text in any known field "
+            f"(keys={sorted(message)})"
+        )
+        return False
+    if field != "content":
+        say(
+            f"WARNING answer arrived in '{field}', not 'content' -- thinking "
+            f"could not be disabled; translation will be slower"
+        )
+    say(f"verify ok via '{field}': {text[:60]!r}")
+    return True
 
 
 if __name__ == "__main__":

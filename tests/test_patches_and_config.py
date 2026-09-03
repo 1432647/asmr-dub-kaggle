@@ -138,6 +138,26 @@ def test_real_patches_apply_to_upstream_fixtures(tmp_path):
         '        max_workers = load_key("max_workers") if load_key("tts_method") != "gpt_sovits" else 1\n'
         "    tasks_df['real_dur'] = 0\n",
     )
+    _write(
+        tmp_path,
+        "core/utils/ask_gpt.py",
+        textwrap.dedent(
+            """\
+            def ask_gpt(prompt, resp_type=None, valid_def=None, log_title="default"):
+                params = dict(
+                    model=model,
+                    messages=messages,
+                    response_format=response_format,
+                    timeout=300
+                )
+                resp_raw = client.chat.completions.create(**params)
+
+                # process and return full result
+                resp_content = resp_raw.choices[0].message.content
+                return resp_content
+            """
+        ),
+    )
 
     applied = apply_patches(str(tmp_path), PATCHES)
     assert len(applied) == len(PATCHES)
@@ -155,6 +175,14 @@ def test_real_patches_apply_to_upstream_fixtures(tmp_path):
     gen_audio = (tmp_path / "core/_10_gen_audio.py").read_text(encoding="utf-8")
     assert '"custom_tts"' in gen_audio
     assert "tasks_df['real_dur'] = 0.0" in gen_audio
+
+    ask_gpt = (tmp_path / "core/utils/ask_gpt.py").read_text(encoding="utf-8")
+    assert 'reasoning_effort="none"' in ask_gpt
+    assert "reasoning_content" in ask_gpt
+    # The patched file must still be valid Python.
+    import ast
+
+    ast.parse(ask_gpt)
 
 
 def test_pandas_is_capped_below_3():

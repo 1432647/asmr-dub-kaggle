@@ -1,9 +1,9 @@
 """Surgical patches applied to the pinned upstream VideoLingo checkout.
 
 Design rule: prefer *adding* an overlay module over *editing* upstream. A new
-file cannot break when upstream changes; an edit can. So only four edits
-survive here, each because the behaviour lives inside a function we otherwise
-want to reuse verbatim.
+file cannot break when upstream changes; an edit can. So only the edits below
+survive, each because the behaviour lives inside a function we otherwise want to
+reuse verbatim.
 
 Every patch is (relative_path, old, new, why). ``old`` must appear exactly once
 in the pinned revision -- ``apply_patches`` fails loudly rather than guessing,
@@ -112,6 +112,88 @@ PATCHES: tuple[Patch, ...] = (
         old="    tasks_df['real_dur'] = 0\n",
         new="    tasks_df['real_dur'] = 0.0  # asmr-dub: float; pandas>=3 will not upcast\n",
         why="pandas 3 rejects float-into-int64 assignment",
+    ),
+    # ------------------------------------------------------------------
+    # 7-8. Survive a thinking model on ollama's OpenAI-compatible endpoint.
+    #
+    # Gemma 4 is a thinking model. Through ollama's `/v1/chat/completions`,
+    # `choices[0].message.content` comes back EMPTY and the whole answer lands
+    # in a non-standard `reasoning` field (ollama#15288). ask_gpt reads only
+    # `content`, so every translation call would return "" -- json_repair turns
+    # that into an empty dict, the validator rejects it, five retries burn, and
+    # the stage dies. Twenty-five minutes of translation, zero output.
+    #
+    # Two defences, because either alone is fragile:
+    #   * ask for `reasoning_effort="none"`, which that endpoint does honour
+    #     (ollama#15635) -- suppressing thinking entirely;
+    #   * if `content` is still empty, fall back to `reasoning`.
+    #
+    # The kwarg is sent best-effort: an endpoint that rejects it raises, and we
+    # retry once without it rather than failing the call.
+    # ------------------------------------------------------------------
+    Patch(
+        path="core/utils/ask_gpt.py",
+        old=(
+            "    params = dict(\n"
+            "        model=model,\n"
+            "        messages=messages,\n"
+            "        response_format=response_format,\n"
+            "        timeout=300\n"
+            "    )\n"
+            "    resp_raw = client.chat.completions.create(**params)\n"
+        ),
+        new=(
+            "    params = dict(\n"
+            "        model=model,\n"
+            "        messages=messages,\n"
+            "        response_format=response_format,\n"
+            "        timeout=300\n"
+            "    )\n"
+            "    # asmr-dub: Gemma 4 is a thinking model; via ollama's /v1 endpoint\n"
+            "    # the answer lands in `reasoning` and `content` is empty unless\n"
+            "    # thinking is switched off. Best-effort: an endpoint that rejects\n"
+            "    # the field (TypeError from an old SDK, 400 from a strict server)\n"
+            "    # is retried once without it.\n"
+            "    try:\n"
+            "        resp_raw = client.chat.completions.create(\n"
+            '            reasoning_effort="none", **params\n'
+            "        )\n"
+            "    except TypeError:\n"
+            "        resp_raw = client.chat.completions.create(**params)\n"
+            "    except Exception as _asmrdub_exc:\n"
+            "        _asmrdub_text = str(_asmrdub_exc).lower()\n"
+            "        _asmrdub_soft = (\n"
+            '            "reasoning_effort" in _asmrdub_text\n'
+            '            or "unknown" in _asmrdub_text\n'
+            '            or "unexpected" in _asmrdub_text\n'
+            '            or "unrecognized" in _asmrdub_text\n'
+            '            or "invalid_request" in _asmrdub_text\n'
+            "        )\n"
+            "        if not _asmrdub_soft:\n"
+            "            raise\n"
+            "        resp_raw = client.chat.completions.create(**params)\n"
+        ),
+        why="disable thinking so content is not empty",
+    ),
+    Patch(
+        path="core/utils/ask_gpt.py",
+        old="    resp_content = resp_raw.choices[0].message.content\n",
+        new=(
+            "    _asmrdub_msg = resp_raw.choices[0].message\n"
+            "    resp_content = _asmrdub_msg.content\n"
+            "    if not (resp_content or '').strip():\n"
+            "        # asmr-dub: thinking model with an empty content field --\n"
+            "        # the text is in `reasoning` (ollama#15288).\n"
+            "        for _asmrdub_alt in ('reasoning', 'reasoning_content', 'thinking'):\n"
+            "            _asmrdub_val = getattr(_asmrdub_msg, _asmrdub_alt, None)\n"
+            "            if _asmrdub_val is None and hasattr(_asmrdub_msg, 'model_extra'):\n"
+            "                _asmrdub_val = (_asmrdub_msg.model_extra or {}).get(_asmrdub_alt)\n"
+            "            if (_asmrdub_val or '').strip():\n"
+            "                rprint(f'[yellow]content empty, using {_asmrdub_alt}[/yellow]')\n"
+            "                resp_content = _asmrdub_val\n"
+            "                break\n"
+        ),
+        why="read the reasoning field when content is empty",
     ),
 )
 
